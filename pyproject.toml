@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phishvpn"
+version = "0.1.0"
+description = "Phishing detection for suspicious VPN connections"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scikit-learn>=1.4",
+  "joblib>=1.3",
+  "openai>=1.50.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
