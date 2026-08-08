@@ -8,11 +8,16 @@ This repository is a complete, Python-only project for detecting phishing activi
 
 ## Web API & interactive dashboard
 
+**Live demo: https://phishvpn-detection-ochre.vercel.app** — no signup, no API key,
+pick a scenario and it scores it live against the real model.
+
 Beyond the CLI pipeline below, `src/phishvpn/api/app.py` wraps the model in a small
 FastAPI service with a dashboard — it trains itself in-memory from synthetic data on
 startup (no model file to manage) and exposes a `/v1/score` endpoint plus a one-page
 sandbox UI with three preset scenarios (benign / borderline / suspicious) you can fire
 with one click.
+
+Run it locally:
 
 ```bash
 pip install -r requirements.txt
