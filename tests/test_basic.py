@@ -1,5 +1,5 @@
+from phishvpn.model import evaluate_model, train_model
 from phishvpn.synthetic_data import generate_synthetic
-from phishvpn.model import train_model, evaluate_model
 
 
 def test_train_and_evaluate():

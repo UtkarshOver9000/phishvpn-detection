@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from .model import load_model
 from .data_schema import SCHEMA
+from .model import load_model
 
 
 def _parse_args() -> argparse.Namespace:

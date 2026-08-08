@@ -12,3 +12,5 @@ data/*.csv
 models/
 *.joblib
 *.log
+.coverage
+htmlcov/

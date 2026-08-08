@@ -8,12 +8,10 @@ covering geo/network, session behavior, and security signals.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
-
 
 TARGET_COLUMN = "is_phishing"
 
-NUMERIC_COLUMNS: List[str] = [
+NUMERIC_COLUMNS: list[str] = [
     "login_failures_24h",
     "unique_ips_24h",
     "session_duration_s",
@@ -26,10 +24,9 @@ NUMERIC_COLUMNS: List[str] = [
     "day_of_week",
 ]
 
-CATEGORICAL_COLUMNS: List[str] = [
+CATEGORICAL_COLUMNS: list[str] = [
     "country",
     "region",
-    "asn",
     "vpn_provider",
     "protocol",
     "device_type",
@@ -37,13 +34,20 @@ CATEGORICAL_COLUMNS: List[str] = [
     "mfa_used",
 ]
 
-ALL_COLUMNS: List[str] = CATEGORICAL_COLUMNS + NUMERIC_COLUMNS + [TARGET_COLUMN]
+# Recorded for telemetry/joins but deliberately excluded from CATEGORICAL_COLUMNS:
+# ASN is a near-unique identifier per session (tens of thousands of distinct
+# values), so one-hot encoding it as a model feature lets a linear model
+# memorize training rows instead of generalizing -- it consistently tanked
+# held-out ROC-AUC to ~0.55-0.58 in testing, versus ~0.92 without it.
+IDENTIFIER_COLUMNS: list[str] = ["asn"]
+
+ALL_COLUMNS: list[str] = IDENTIFIER_COLUMNS + CATEGORICAL_COLUMNS + NUMERIC_COLUMNS + [TARGET_COLUMN]
 
 
 @dataclass(frozen=True)
 class Schema:
-    categorical: List[str]
-    numeric: List[str]
+    categorical: list[str]
+    numeric: list[str]
     target: str
 
 

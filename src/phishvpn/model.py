@@ -5,9 +5,7 @@ Model pipeline for phishing detection on VPN sessions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
 
-import numpy as np
 import pandas as pd
 from joblib import dump, load
 from sklearn.compose import ColumnTransformer

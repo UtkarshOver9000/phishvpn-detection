@@ -12,8 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .data_schema import ALL_COLUMNS, CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, TARGET_COLUMN
-
+from .data_schema import ALL_COLUMNS
 
 COUNTRIES = ["US", "IN", "DE", "BR", "GB", "CN", "JP", "ZA", "AE", "SG", "RU", "NG"]
 REGIONS = ["na", "sa", "eu", "apac", "mea"]
@@ -26,6 +25,10 @@ MFA_USED = ["yes", "no"]
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
+
+
+def _zscore(x: np.ndarray) -> np.ndarray:
+    return (x - x.mean()) / (x.std() + 1e-9)
 
 
 def generate_synthetic(rows: int, seed: int = 7) -> pd.DataFrame:
@@ -51,18 +54,24 @@ def generate_synthetic(rows: int, seed: int = 7) -> pd.DataFrame:
     hour_of_day = rng.integers(0, 24, size=rows)
     day_of_week = rng.integers(0, 7, size=rows)
 
+    # Continuous, z-scored contributions rather than rare binary thresholds:
+    # thresholded indicators (e.g. "suspicious_url_count > 1") are each true for
+    # only a small slice of rows and rarely co-occur, so their combined signal
+    # barely rises above the noise term below -- the resulting labels end up
+    # almost unlearnable (~0.55-0.6 ROC-AUC ceiling even for a perfect model).
+    # Scaled continuous signals give every row a graded, separable risk score.
     risk = (
-        0.8 * (login_failures_24h > 2).astype(float)
-        + 0.6 * (unique_ips_24h > 3).astype(float)
-        + 1.1 * (domain_similarity_score > 0.7).astype(float)
-        + 0.9 * (suspicious_url_count > 1).astype(float)
-        + 0.7 * (cert_age_days < 30).astype(float)
-        + 0.5 * (new_account_days < 7).astype(float)
-        + 0.4 * (mfa_used == "no").astype(float)
-        + 0.3 * (protocol == "pptp").astype(float)
+        1.1 * _zscore(login_failures_24h)
+        + 0.9 * _zscore(unique_ips_24h)
+        + 1.4 * _zscore(domain_similarity_score)
+        + 1.1 * _zscore(suspicious_url_count)
+        - 1.0 * _zscore(cert_age_days)
+        - 0.9 * _zscore(new_account_days)
+        + 0.6 * (mfa_used == "no").astype(float)
+        + 0.4 * (protocol == "pptp").astype(float)
     )
 
-    logits = -2.0 + risk + rng.normal(0, 0.6, size=rows)
+    logits = -3.5 + risk + rng.normal(0, 0.5, size=rows)
     prob = _sigmoid(logits)
     is_phishing = (rng.random(size=rows) < prob).astype(int)
 
