@@ -6,6 +6,22 @@ This repository is a complete, Python-only project for detecting phishing activi
 
 **Why synthetic data?** Real VPN/phishing telemetry is sensitive and usually private. This repo includes a realistic *synthetic* generator so you can run the full pipeline end-to-end. Replace it with your own data if available.
 
+## Web API & interactive dashboard
+
+Beyond the CLI pipeline below, `src/phishvpn/api/app.py` wraps the model in a small
+FastAPI service with a dashboard — it trains itself in-memory from synthetic data on
+startup (no model file to manage) and exposes a `/v1/score` endpoint plus a one-page
+sandbox UI with three preset scenarios (benign / borderline / suspicious) you can fire
+with one click.
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src python -m uvicorn phishvpn.api.app:app --reload --port 8000
+```
+
+- Dashboard: http://localhost:8000
+- Interactive API docs (Swagger): http://localhost:8000/docs
+
 ## Problem Statement
 Given VPN connection logs and related security telemetry, predict whether a session is likely to be associated with phishing activity. The model should generalize across geographies and providers, handle categorical + numeric signals, and provide risk scores to support security triage.
 
