@@ -1,0 +1,133 @@
+{
+  "model": "gradient_boosting",
+  "threshold": 0.4953,
+  "features": [
+    "name_len",
+    "name_digits",
+    "name_digit_ratio",
+    "name_hyphens",
+    "name_entropy",
+    "name_vowel_ratio",
+    "name_max_consonant_run",
+    "name_max_digit_run",
+    "brand_token_count",
+    "lure_token_count",
+    "suffix_labels",
+    "is_private_suffix",
+    "host_is_suffix",
+    "is_ip",
+    "is_punycode",
+    "tld"
+  ],
+  "legit_reference_ranges": {
+    "name_len": {
+      "p05": 4.0,
+      "p95": 18.0,
+      "mean": 9.79863314803562
+    },
+    "name_digits": {
+      "p05": 0.0,
+      "p95": 2.0,
+      "mean": 0.26517078147623013
+    },
+    "name_digit_ratio": {
+      "p05": 0.0,
+      "p95": 0.2857142857142857,
+      "mean": 0.03586284676552969
+    },
+    "name_hyphens": {
+      "p05": 0.0,
+      "p95": 1.0,
+      "mean": 0.10969624678354677
+    },
+    "name_entropy": {
+      "p05": 1.584962500721156,
+      "p95": 3.4992275471326932,
+      "mean": 2.7500516978406315
+    },
+    "name_vowel_ratio": {
+      "p05": 0.0,
+      "p95": 0.5454545454545454,
+      "mean": 0.35696967169045496
+    },
+    "name_max_consonant_run": {
+      "p05": 1.0,
+      "p95": 4.0,
+      "mean": 2.4612742781266177
+    },
+    "name_max_digit_run": {
+      "p05": 0.0,
+      "p95": 2.0,
+      "mean": 0.23812181636771468
+    },
+    "brand_token_count": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.0026046707027059467
+    },
+    "lure_token_count": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.0030997981980359943
+    },
+    "suffix_labels": {
+      "p05": 1.0,
+      "p95": 2.0,
+      "mean": 1.107717237188576
+    },
+    "is_private_suffix": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.0007546943337909511
+    },
+    "host_is_suffix": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.000778700515382711
+    },
+    "is_ip": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "is_punycode": {
+      "p05": 0.0,
+      "p95": 0.0,
+      "mean": 0.001386356986924133
+    }
+  },
+  "test_metrics": {
+    "threshold": 0.4953,
+    "rows": 220987,
+    "accuracy": 0.9743,
+    "precision": 0.96,
+    "recall": 0.4398,
+    "f1": 0.6032,
+    "false_positive_rate": 0.0009,
+    "roc_auc": 0.8275,
+    "pr_auc": 0.563,
+    "log_loss": 0.1129,
+    "brier": 0.0245,
+    "confusion_matrix": {
+      "tn": 210979,
+      "fp": 180,
+      "fn": 5506,
+      "tp": 4322
+    }
+  },
+  "live_evaluation": {
+    "openphish_recall": 0.6324,
+    "openphish_fetched_at": "2026-10-04T04:29:44Z",
+    "tranco_false_positive_rate": 0.0009,
+    "tranco_list_id": "Y83KG"
+  },
+  "business": {
+    "phishing_caught_per_100_live_sites": 63.2,
+    "false_alarms_per_10k_legit_sites": 9.0,
+    "precision_in_production": {
+      "phishing_is_1.0%_of_visits": 0.8765,
+      "phishing_is_0.1%_of_visits": 0.4129
+    }
+  },
+  "scikit_learn": "1.9.1"
+}

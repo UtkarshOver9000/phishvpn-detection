@@ -1,82 +1,56 @@
-"""
-Unit tests for the FastAPI wrapper around the phishing-detection model.
-"""
+"""API tests against the shipped model artifact in src/phishurl/artifacts."""
 
 from fastapi.testclient import TestClient
 
-from phishvpn.api.app import app, risk_tier
+from phishurl.api.app import app
+from phishurl.scorer import risk_tier
 
 client = TestClient(app)
 
-BENIGN_SESSION = {
-    "country": "US", "region": "na", "vpn_provider": "provider_a", "protocol": "wireguard",
-    "device_type": "desktop", "auth_method": "sso", "mfa_used": "yes",
-    "login_failures_24h": 0, "unique_ips_24h": 1, "session_duration_s": 900,
-    "domain_similarity_score": 0.05, "suspicious_url_count": 0, "cert_age_days": 400,
-    "new_account_days": 45, "account_age_days": 1200, "hour_of_day": 14, "day_of_week": 2,
-}
 
-SUSPICIOUS_SESSION = {
-    "country": "RU", "region": "eu", "vpn_provider": "unknown", "protocol": "pptp",
-    "device_type": "mobile", "auth_method": "password", "mfa_used": "no",
-    "login_failures_24h": 5, "unique_ips_24h": 7, "session_duration_s": 120,
-    "domain_similarity_score": 0.92, "suspicious_url_count": 4, "cert_age_days": 4,
-    "new_account_days": 1, "account_age_days": 3, "hour_of_day": 3, "day_of_week": 6,
-}
+def test_health():
+    assert client.get("/v1/health").json() == {"status": "ok"}
 
 
-def test_risk_tier_boundaries():
-    assert risk_tier(0.0) == "LOW"
-    assert risk_tier(0.34) == "LOW"
-    assert risk_tier(0.35) == "MEDIUM"
-    assert risk_tier(0.6) == "HIGH"
-    assert risk_tier(0.8) == "CRITICAL"
-    assert risk_tier(1.0) == "CRITICAL"
-
-
-def test_health_check():
-    res = client.get("/v1/health")
-    assert res.status_code == 200
-    assert res.json() == {"status": "ok"}
-
-
-def test_stats_reports_real_training_metrics():
-    res = client.get("/v1/stats")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["engine_status"] == "ONLINE"
-    assert 0.0 <= data["roc_auc"] <= 1.0
-    assert 0.0 <= data["phishing_class_recall"] <= 1.0
-    assert data["trained_on_rows"] > 0
-
-
-def test_score_benign_session_is_low_risk():
-    res = client.post("/v1/score", json=BENIGN_SESSION)
-    assert res.status_code == 200
-    data = res.json()
-    assert data["phishing_probability"] < 0.35
-    assert data["risk_tier"] == "LOW"
-    assert data["is_phishing_prediction"] is False
-
-
-def test_score_suspicious_session_is_high_risk():
-    res = client.post("/v1/score", json=SUSPICIOUS_SESSION)
-    assert res.status_code == 200
-    data = res.json()
-    assert data["phishing_probability"] > 0.8
-    assert data["risk_tier"] == "CRITICAL"
-    assert data["is_phishing_prediction"] is True
-
-
-def test_score_uses_field_defaults_when_omitted():
-    res = client.post("/v1/score", json={})
-    assert res.status_code == 200
-    data = res.json()
-    assert 0.0 <= data["phishing_probability"] <= 1.0
-
-
-def test_dashboard_root_served():
+def test_dashboard_is_served():
     res = client.get("/")
+    assert res.status_code == 200 and "Phishing URL Detection" in res.text
+
+
+def test_stats_come_from_the_model_card():
+    data = client.get("/v1/stats").json()
+    assert data["model"] == "gradient_boosting"
+    assert 0 < data["threshold"] < 1
+    for key in ("accuracy", "precision", "recall", "f1", "roc_auc", "pr_auc", "log_loss"):
+        assert 0 <= data["test_metrics"][key] <= 1 or key == "log_loss"
+    assert data["live_evaluation"]["tranco_list_id"]
+    assert "false_alarms_per_10k_legit_sites" in data["business"]
+
+
+def test_score_response_shape():
+    res = client.post("/v1/score", json={"url": "https://secure-account-verify-paypa1.com/login"})
     assert res.status_code == 200
-    assert "text/html" in res.headers["content-type"]
-    assert "PhishVPN" in res.text
+    data = res.json()
+    assert data["registrable_domain"] == "secure-account-verify-paypa1.com"
+    assert 0 <= data["phishing_probability"] <= 1
+    assert data["flagged"] == (data["phishing_probability"] >= data["threshold"])
+    assert data["risk_tier"] in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+    assert isinstance(data["reasons"], list)
+
+
+def test_path_does_not_change_the_score():
+    a = client.post("/v1/score", json={"url": "https://example.org"}).json()
+    b = client.post("/v1/score", json={"url": "http://www.example.org/login/verify?x=1"}).json()
+    assert a["phishing_probability"] == b["phishing_probability"]
+
+
+def test_rejects_input_without_a_domain():
+    assert client.post("/v1/score", json={"url": "://"}).status_code == 422
+    assert client.post("/v1/score", json={"url": ""}).status_code == 422
+
+
+def test_risk_tier_is_anchored_on_threshold():
+    assert risk_tier(0.95, 0.6) == "CRITICAL"
+    assert risk_tier(0.65, 0.6) == "HIGH"
+    assert risk_tier(0.35, 0.6) == "MEDIUM"
+    assert risk_tier(0.1, 0.6) == "LOW"

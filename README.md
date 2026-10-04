@@ -1,142 +1,222 @@
-# Phishing Detection for Suspicious VPN Connections (Python-Only)
+# Phishing URL Detection
 
 ![CI](https://github.com/UtkarshOver9000/phishvpn-detection/actions/workflows/ci.yml/badge.svg)
 
-This repository is a complete, Python-only project for detecting phishing activity associated with suspicious VPN connections across the globe. It provides a full baseline ML pipeline: data schema, synthetic data generator, feature preprocessing, model training, evaluation, and inference CLI.
+Scores how likely a URL is to be phishing, from its domain alone, before anyone clicks it.
+The model is trained on **real data**: 235,795 labelled URLs from the PhiUSIIL dataset plus
+574,039 real popular domains from the Tranco top-1M list. It is then tested on **phishing
+sites that were live on the day of training** (the OpenPhish feed) and on 191,347 held-out
+real domains.
 
-**Why synthetic data?** Real VPN/phishing telemetry is sensitive and usually private. This repo includes a realistic *synthetic* generator so you can run the full pipeline end-to-end. Replace it with your own data if available.
+**Live demo:** https://phishvpn-detection-ochre.vercel.app (score any URL; nothing is fetched or visited)
+**API docs:** https://phishvpn-detection-ochre.vercel.app/docs
 
-## Web API & interactive dashboard
+## Results at a glance
 
-**Live demo: https://phishvpn-detection-ochre.vercel.app** — no signup, no API key,
-pick a scenario and it scores it live against the real model.
+Shipped model: gradient boosting, decision threshold 0.4953, chosen on validation data so
+that only 1 in 1,000 legitimate domains gets flagged.
 
-Beyond the CLI pipeline below, `src/phishvpn/api/app.py` wraps the model in a small
-FastAPI service with a dashboard — it trains itself in-memory from synthetic data on
-startup (no model file to manage) and exposes a `/v1/score` endpoint plus a one-page
-sandbox UI with three preset scenarios (benign / borderline / suspicious) you can fire
-with one click.
+| What was measured | Data | Result |
+|---|---|---|
+| Live phishing domains caught | OpenPhish feed, 253 unique domains, fetched 2026-10-04 04:29 UTC | **63.2%** (160 of 253) |
+| False alarms on real sites | 191,347 held-out Tranco domains | **0.09%** (9 per 10,000) |
+| Accuracy | 220,987 held-out domains (PhiUSIIL test + Tranco test) | 97.43% |
+| Precision / recall | same | 96.00% / 43.98% |
+| F1 | same | 0.6032 |
+| ROC-AUC / PR-AUC | same | 0.8275 / 0.5630 |
+| Log loss / Brier score | same | 0.1129 / 0.0245 |
 
-Run it locally:
+The precision and recall above are on 220,987 held-out domains, of which 9,828 are
+phishing. **What this means in production**, combining live recall with the false-alarm
+rate on real sites:
 
-```bash
-pip install -r requirements.txt
-PYTHONPATH=src python -m uvicorn phishvpn.api.app:app --reload --port 8000
-```
-
-- Dashboard: http://localhost:8000
-- Interactive API docs (Swagger): http://localhost:8000/docs
-
-## Problem Statement
-Given VPN connection logs and related security telemetry, predict whether a session is likely to be associated with phishing activity. The model should generalize across geographies and providers, handle categorical + numeric signals, and provide risk scores to support security triage.
-
-## Repository Structure
-- `src/phishvpn/` core library (schema, features, model, train/eval/infer)
-- `data/` placeholder for datasets
-- `tests/` minimal sanity tests
-- `requirements.txt` Python dependencies
-
-## Quickstart
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-
-# For running modules from source without installing:
-set PYTHONPATH=src
-
-# 1) Generate synthetic data
-python -m phishvpn.synthetic_data --out data/sessions.csv --rows 50000
-
-# 2) Train
-python -m phishvpn.train --data data/sessions.csv --model-out models/phishvpn.joblib
-
-# 3) Evaluate
-python -m phishvpn.evaluate --data data/sessions.csv --model models/phishvpn.joblib
-
-# 4) Inference
-python -m phishvpn.infer --data data/sessions.csv --model models/phishvpn.joblib --out data/preds.csv
-```
-
-## Run the tests
-
-```bash
-pip install -r requirements.txt
-pytest --cov=src --cov-report=term-missing
-```
-
-20 tests, 82% line coverage: schema/generator sanity, model train/evaluate/save-load,
-the train/evaluate/infer CLIs end-to-end, and the pure helper functions in
-`explain.py` (its OpenAI-calling `main()` is intentionally left untested — it needs
-a live API key/network access, which a unit suite shouldn't depend on). Lint with
-`ruff check .`. CI (`.github/workflows/ci.yml`) runs lint + tests + a full
-generate/train smoke test on Python 3.10–3.12 for every push and PR.
-
-## Model performance
-
-Trained with `python -m phishvpn.train --data data/sessions.csv --model-out models/phishvpn.joblib`
-on 50,000 synthetic sessions (80/20 stratified split, logistic regression, seed 7):
-
-| Metric | Score |
+| If phishing is ... of visited sites | Share of warnings that are real phishing |
 |---|---|
-| ROC-AUC | 0.919 |
-| Precision (phishing class) | 0.483 |
-| Recall (phishing class) | 0.846 |
-| F1 (phishing class) | 0.615 |
-| Accuracy | 83.6% |
+| 1% | 87.65% |
+| 0.1% | 41.29% |
 
-These numbers are on synthetic data with a known-imbalanced positive rate (~15%), not
-real telemetry — see Limitations. Getting here required fixing two real bugs in the
-original baseline, not just tuning:
+At this operating point, 63 of every 100 live phishing domains get a warning, while
+9 of every 10,000 legitimate sites get a false one.
 
-- **`asn` (network ID) was one-hot encoded as a categorical feature.** It's a
-  near-unique identifier — ~28k distinct values across 50k rows — so the linear model
-  was memorizing training rows via their ASN instead of learning generalizable
-  signal: in-sample AUC was 0.96, held-out AUC was 0.54. It's now excluded from model
-  features (`data_schema.py`'s `IDENTIFIER_COLUMNS`) but still generated/recorded for
-  telemetry.
-- **The synthetic label was driven by rare binary thresholds** (e.g.
-  `suspicious_url_count > 1`) that individually fired on a small slice of rows and
-  rarely co-occurred, combined with a noise term large enough to erase most of what
-  little signal existed — the Bayes-optimal ceiling given the old formula was ~0.6
-  ROC-AUC, regardless of model quality. `synthetic_data.py` now uses continuous
-  z-scored contributions from every risk-relevant feature, giving every row a graded,
-  separable score.
+## Why only the domain? (dataset shortcut audit)
+
+PhiUSIIL is widely used, and it has a shortcut big enough to make almost any model look
+perfect. `python -m phishurl.audit` measures it on the full 235,795 rows:
+
+| Check | Result |
+|---|---|
+| Legitimate URLs that start with `https://www.` | 100% |
+| Phishing URLs that start with `https://www.` | 2.43% |
+| Legitimate URLs with any path after the domain | 0% |
+| Accuracy of the one-line rule "not `https://www.` → phishing" | **98.96%** |
+| Best single precomputed feature (`URLSimilarityIndex`) ROC-AUC | 0.9961 |
+| Gradient boosting on all 50 numeric dataset features: test accuracy | **100%** |
+
+A 100% score here measures URL *formatting*, not phishing. So this project throws away the
+scheme, `www.`, subdomains, path and query string, and computes its own 16 features from
+the **registrable domain** only (for example `paypal-verify.com`, or
+`caseid42.firebaseapp.com` on a shared hosting platform). The test
+`test_path_scheme_and_www_do_not_change_features` enforces this.
+
+Features: domain name length, digit count and ratio, hyphens, character entropy, vowel
+ratio, longest consonant and digit runs, brand words (`paypal`, `microsoft`, ...), lure
+words (`login`, `verify`, ...), suffix depth, shared-hosting suffix (from the Public
+Suffix List private section, e.g. `*.pages.dev`), raw IP, punycode, and the top-level domain.
+
+## Data
+
+| Dataset | What it is | Used for | License |
+|---|---|---|---|
+| [PhiUSIIL Phishing URL Dataset](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset) (UCI #967) | 235,795 URLs: 100,945 phishing, 134,850 legitimate | training / validation / test | CC BY 4.0 |
+| [Tranco top-1M](https://tranco-list.eu/), list [`Y83KG`](https://tranco-list.eu/list/Y83KG/1000000) | 1,000,000 most popular registrable domains (30 days to 2026-10-03) | extra legitimate examples, false-alarm test | see Tranco site |
+| [OpenPhish community feed](https://openphish.com/feed.txt) | phishing URLs live on 2026-10-04 | **evaluation only**, never trained on | non-commercial research only; not redistributed |
+
+Preparation (`src/phishurl/data.py`):
+
+- PhiUSIIL URLs are reduced to registrable domains. Domains that appear with both labels
+  are dropped (106), and duplicates are collapsed. That leaves **197,602 unique domains**
+  (65,522 phishing, 132,080 legitimate).
+- These are split 70/15/15 **by domain**, so no domain is ever in both training and test:
+  138,322 train, 29,640 validation, 29,640 test.
+- Tranco domains already present in PhiUSIIL are removed (43,267). The remaining 956,733
+  are split 60/20/20: 574,039 train, 191,347 validation, 191,347 test.
+- 8 of the 253 live OpenPhish domains also occur in PhiUSIIL's training set.
+
+`scripts/download_data.py` fetches all three sources. Raw data is never committed:
+`data/` is gitignored, and the OpenPhish feed contains live malicious URLs.
+
+| File | SHA-256 |
+|---|---|
+| `phiusiil.zip` (UCI) | `0a639fd03aea6308c5b1c10c92aa23c2ce1505447a9137271865cd0badc9a59a` |
+| `tranco-top-1m.csv.zip` (list Y83KG) | `11d604d8cdf9418eb85a28337deec72466dadd38be740b4c69910cf982e1c0c3` |
+| `openphish-feed.txt` (2026-10-04 04:29 UTC) | `15ce676d5e2b2ad96cc040b0ea00b6cfb47ffd90f80571f5b23ff9601b511a41` |
+
+## Training
+
+Three models are trained on the same 712,361 domains (6.4% phishing), with early
+stopping on the 220,987-domain validation set (4.4% phishing):
+
+| Model | Training | Stopped at | Train / validation log loss |
+|---|---|---|---|
+| Logistic regression | L-BFGS | 161 solver iterations | 0.1526 / 0.1176 |
+| **Gradient boosting** (shipped) | 600 rounds recorded | best round **234** | 0.1402 / 0.1134 |
+| MLP (64-32 hidden units) | mini-batch Adam, 512 per batch | best epoch **13** of 19 (patience 6) | 0.1455 / 0.1149, val accuracy 97.35% |
+
+Training loss is higher than validation loss because the training set has more phishing
+(6.4% vs 4.4%), not because of a bug. The gaps between train and test metrics are small;
+see `reports/metrics.json`.
+
+![Loss curves](reports/figures/loss_curves.png)
+
+### Model comparison (held-out test, threshold for 0.1% false positives)
+
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC | Log loss | Live OpenPhish recall | Tranco false alarms |
+|---|---|---|---|---|---|---|---|---|---|
+| Logistic regression | 97.32% | 94.95% | 42.06% | 0.5830 | 0.8128 | 0.5394 | 0.1171 | 62.85% | 0.11% |
+| **Gradient boosting** | **97.43%** | **96.00%** | **43.98%** | **0.6032** | **0.8275** | **0.5630** | **0.1129** | **63.24%** | **0.09%** |
+| MLP | 97.38% | 95.59% | 42.99% | 0.5931 | 0.8255 | 0.5565 | 0.1140 | 62.85% | 0.10% |
+
+![ROC and precision-recall](reports/figures/roc_pr.png)
+![Confusion matrix](reports/figures/confusion_matrix.png)
+
+Confusion matrix of the shipped model on the 220,987 test domains: 210,979 true negatives,
+180 false positives, 5,506 false negatives, 4,322 true positives.
+
+### Looser operating point (1 false alarm per 100 sites)
+
+Gradient boosting at threshold 0.1754: live OpenPhish recall 67.98%, Tranco false alarms
+1.06%, test precision 69.26%, test recall 48.17%. That's about 4.8 more live phishing
+domains caught per 100, at about 12 times the false alarms. That trade is not worth it
+for a browser warning, so it isn't shipped.
+
+### Why Tranco is in the training data (ablation)
+
+The same gradient boosting model trained on PhiUSIIL alone looks better on PhiUSIIL's own
+test set (ROC-AUC 0.8640). On real popular sites, though, it falls apart: at its 1%
+validation threshold it flags **12.09%** of held-out Tranco domains, and 2.31% even at its
+0.1% threshold. PhiUSIIL's legitimate domains are a narrow sample. Adding real Tranco
+domains to training changes this:
+
+| Operating point | False alarms on Tranco (PhiUSIIL only → with Tranco) | Live OpenPhish recall (PhiUSIIL only → with Tranco) |
+|---|---|---|
+| 1% validation FPR | 12.09% → 1.06% (11× fewer) | 75.49% → 67.98% |
+| 0.1% validation FPR | 2.31% → 0.09% (26× fewer) | 66.01% → 63.24% |
+
+## Limitations
+
+- **Domain only.** A phishing page hosted on a hacked legitimate domain gets that domain's
+  score. 36.8% of the live OpenPhish domains were missed at the shipped threshold, and
+  PhiUSIIL test recall is 43.98%. This is a first-line filter, not a complete defence.
+- **Shared hosting.** Subdomains of platforms like `*.pages.dev` or `*.firebaseapp.com`
+  are scored as their own domain, and the platform feature raises their risk. Honest
+  personal sites on those platforms can be flagged.
+- **Tranco is popularity, not a guarantee of being benign.** A few Tranco domains may be
+  malicious, which makes the false-alarm rate slightly pessimistic.
+- **The live test is one snapshot** of 253 domains. Rerun `scripts/download_data.py` and
+  `python -m phishurl.train` to measure on today's feed.
+- **Reasons are descriptive.** The demo lists features outside the 5th-95th percentile
+  range of legitimate training domains. They describe the domain; they are not exact
+  model attributions.
+
+## Run it
 
 ```bash
-python -m phishvpn.evaluate --data data/sessions.csv --model models/phishvpn.joblib
+pip install -r requirements-dev.txt
+python scripts/download_data.py                        # ~25 MB into data/
+PYTHONPATH=src python -m phishurl.train                # about 9 minutes on a laptop CPU
+PYTHONPATH=src python -m phishurl.audit                # dataset shortcut audit
+PYTHONPATH=src python -m uvicorn phishurl.api.app:app --reload --port 8000
 ```
 
-## OpenAI-Assisted Triage (Best Real-World Add-On)
-Use OpenAI to generate concise analyst-facing explanations for high-risk sessions.
+`train` writes `src/phishurl/artifacts/model.joblib` and `model_card.json` (loaded by the
+API) and `reports/metrics.json` plus `reports/figures/`. The numbers in this README come
+from that file (run time 548 s on a Ryzen 7 7445HS).
 
-```powershell
-setx OPENAI_API_KEY "your_api_key_here"
+```bash
+curl -X POST http://localhost:8000/v1/score -H "Content-Type: application/json" \
+     -d '{"url": "https://secure-account-verify-paypa1.com/login"}'
 ```
 
-```powershell
-python -m phishvpn.explain --data data/sessions.csv --model models/phishvpn.joblib --out data/explanations.jsonl --threshold 0.7 --limit 25
+`GET /v1/stats` returns the deployed model's test, live and business metrics.
+
+## Tests
+
+```bash
+pytest --cov=src
 ```
 
-## Data Schema (Core Columns)
-See `src/phishvpn/data_schema.py` for full schema.
+31 tests cover feature extraction (including the "path never changes the score"
+guarantee), dataset loading, the domain-disjoint split, metric and threshold maths, all
+three trainers, explanations and the API. Line coverage is 64%; the offline training,
+plotting and audit scripts are exercised by running `train`, not by unit tests. CI runs
+lint and tests on Python 3.11 to 3.13.
 
-- **Categorical model features**: `country`, `region`, `vpn_provider`, `protocol`, `device_type`, `auth_method`, `mfa_used`
-- **Numeric model features**: `login_failures_24h`, `unique_ips_24h`, `session_duration_s`, `domain_similarity_score`, `suspicious_url_count`, `cert_age_days`, `new_account_days`, `account_age_days`, `hour_of_day`, `day_of_week`
-- **Identifier (recorded, not fed to the model)**: `asn` — high-cardinality, excluded from `CATEGORICAL_COLUMNS` (see Model performance)
+## Project layout
 
-Target label:
-- `is_phishing` (1 = phishing activity likely, 0 = benign)
+```
+src/phishurl/
+  features.py   URL -> registrable domain -> 16 features
+  data.py       PhiUSIIL / Tranco / OpenPhish loaders, dedupe, domain-disjoint splits
+  models.py     logistic regression, gradient boosting (per-round loss), MLP (per-epoch loss)
+  metrics.py    accuracy, precision, recall, F1, ROC/PR-AUC, log loss, Brier, business metrics
+  audit.py      PhiUSIIL shortcut audit
+  train.py      end-to-end training + evaluation -> artifacts/ and reports/
+  scorer.py     loads the shipped model for the API
+  explain.py    plain-language reasons
+  api/app.py    FastAPI service + demo page
+scripts/download_data.py
+reports/        metrics.json and figures from the last training run
+```
 
-## Notes and Limitations
-This baseline is intentionally simple and interpretable. For production:
-- Replace synthetic data with real telemetry — the model has not been validated against real-world sessions, only against its own synthetic generator.
-- Add drift detection and region-aware validation
-- Incorporate temporal features and graph signals
-- Integrate human-in-the-loop review and explainability
-- Precision on the phishing class is 0.48 at the default 0.5 threshold — in a real triage
-  system this threshold should be tuned against the actual cost of false positives vs.
-  missed detections, not left at the default.
+## References
+
+- A. Prasad and S. Chandra, "PhiUSIIL: A diverse security profile empowered phishing URL detection
+  framework based on similarity index and incremental learning", *Computers & Security* 136 (2024).
+  doi:10.1016/j.cose.2023.103545
+- V. Le Pochat et al., "Tranco: A Research-Oriented Top Sites Ranking Hardened Against
+  Manipulation", NDSS 2019.
+- OpenPhish community feed, https://openphish.com (used under its non-commercial research terms).
 
 ## License
-MIT
+
+MIT for the code. The datasets keep their own licenses (see the Data section).

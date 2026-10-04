@@ -1,16 +1,15 @@
 .venv/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.so
+*.py[cod]
 .pytest_cache/
+.ruff_cache/
 dist/
 build/
 *.egg-info/
-data/*.csv
-models/
-*.joblib
-*.log
 .coverage
 htmlcov/
+
+# Raw datasets are downloaded by scripts/download_data.py and never committed
+# (the OpenPhish feed contains live malicious URLs).
+data/*
+!data/.gitkeep

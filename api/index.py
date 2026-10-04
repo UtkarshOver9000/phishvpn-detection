@@ -7,7 +7,7 @@ src_dir = root_dir / "src"
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from phishvpn.api.app import app  # noqa: E402
+from phishurl.api.app import app  # noqa: E402
 
 # Vercel Serverless handler
 handler = app

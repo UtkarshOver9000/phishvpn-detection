@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phishing URL Detection</title>
+<style>
+  :root {
+    --bg: #090d16; --panel: #111827; --panel-alt: #0f172a; --border: #1e2d40;
+    --text: #f8fafc; --muted: #64748b; --dim: #94a3b8; --accent: #3b82f6;
+    --green: #10b981; --yellow: #f59e0b; --orange: #f97316; --red: #ef4444;
+    --radius: 8px; --font: 'Segoe UI', system-ui, sans-serif; --mono: 'Consolas', 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; padding: 28px 16px 60px; }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: var(--dim); font-size: 13.5px; max-width: 720px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 22px 0 26px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .tile .label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .tile .value { font-size: 22px; font-weight: 700; }
+  .tile .note { font-size: 11.5px; color: var(--dim); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 14px; margin-bottom: 4px; }
+  .hint { color: var(--dim); font-size: 12.5px; margin-bottom: 14px; }
+  form { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=text] { flex: 1; min-width: 220px; background: var(--panel-alt); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 10px 12px; font-family: var(--mono); font-size: 13px; }
+  button { background: var(--accent); border: 0; color: white; padding: 10px 16px; border-radius: var(--radius); font-weight: 600; cursor: pointer; }
+  button.preset { background: var(--panel-alt); border: 1px solid var(--border); color: var(--text); font-weight: 500; font-family: var(--mono); font-size: 12px; padding: 6px 10px; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #result { margin-top: 18px; display: none; }
+  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .badge { font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 999px; }
+  .LOW { background: rgba(16,185,129,.12); color: var(--green); }
+  .MEDIUM { background: rgba(245,158,11,.12); color: var(--yellow); }
+  .HIGH { background: rgba(249,115,22,.12); color: var(--orange); }
+  .CRITICAL { background: rgba(239,68,68,.12); color: var(--red); }
+  .track { flex: 1; height: 10px; background: var(--panel-alt); border-radius: 999px; overflow: hidden; position: relative; }
+  .fill { height: 100%; border-radius: 999px; transition: width .4s ease; }
+  .tick { position: absolute; top: -3px; width: 2px; height: 16px; background: var(--dim); }
+  .mono { font-family: var(--mono); font-size: 13px; color: var(--dim); }
+  ul { margin: 8px 0 0 18px; color: var(--dim); font-size: 13px; }
+  .error { color: var(--red); font-size: 13px; margin-top: 12px; }
+  footer { color: var(--muted); font-size: 12.5px; margin-top: 30px; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Phishing URL Detection</h1>
+  <p class="subtitle">
+    Scores the registrable domain of a URL with a gradient-boosting model trained on the real
+    PhiUSIIL dataset plus the Tranco top-1M list, and tested on today's OpenPhish feed.
+    The numbers below come from the deployed model's own evaluation.
+  </p>
+
+  <div class="stats">
+    <div class="tile"><div class="label">Live phishing caught</div><div class="value" id="s-recall">—</div><div class="note" id="s-recall-note">OpenPhish feed</div></div>
+    <div class="tile"><div class="label">False alarms</div><div class="value" id="s-fpr">—</div><div class="note">on held-out Tranco sites</div></div>
+    <div class="tile"><div class="label">Test ROC-AUC</div><div class="value" id="s-auc">—</div><div class="note">held-out domains</div></div>
+    <div class="tile"><div class="label">Test precision / recall</div><div class="value" id="s-pr">—</div><div class="note" id="s-thr">at threshold</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Score a URL</h2>
+    <p class="hint">Only the registrable domain is scored (e.g. <span class="mono">login.example.co.uk/x</span> → <span class="mono">example.co.uk</span>). Nothing is fetched or visited.</p>
+    <form id="score-form">
+      <input type="text" id="url" value="https://secure-account-verify-paypa1.com/login" aria-label="URL to score" />
+      <button type="submit" id="go">Score</button>
+    </form>
+    <div class="presets">
+      <button class="preset" data-url="https://www.wikipedia.org">wikipedia.org</button>
+      <button class="preset" data-url="https://github.com/login">github.com/login</button>
+      <button class="preset" data-url="https://www.sbi.co.in">sbi.co.in</button>
+      <button class="preset" data-url="http://microsoft-office365-verify-login.com">microsoft-office365-verify-login.com</button>
+      <button class="preset" data-url="https://caseid10089345734.firebaseapp.com/">caseid10089345734.firebaseapp.com</button>
+      <button class="preset" data-url="http://198.51.100.23/bank/login">198.51.100.23</button>
+    </div>
+    <div id="result">
+      <div class="row">
+        <span class="badge" id="tier">—</span>
+        <div class="track"><div class="fill" id="bar"></div><div class="tick" id="tick" title="decision threshold"></div></div>
+        <span class="mono" id="prob">—</span>
+      </div>
+      <div class="mono" id="verdict"></div>
+      <ul id="reasons"></ul>
+    </div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <footer>
+    <a href="/docs" target="_blank" rel="noopener">API docs</a> ·
+    <a href="/v1/stats" target="_blank" rel="noopener">Raw metrics</a> ·
+    <a href="https://github.com/UtkarshOver9000/phishvpn-detection" target="_blank" rel="noopener">Source on GitHub</a>
+  </footer>
+</div>
+
+<script>
+const color = { LOW: "var(--green)", MEDIUM: "var(--yellow)", HIGH: "var(--orange)", CRITICAL: "var(--red)" };
+const pct = (v, d = 1) => (v * 100).toFixed(d) + "%";
+
+async function loadStats() {
+  try {
+    const s = await (await fetch("/v1/stats")).json();
+    document.getElementById("s-recall").textContent = pct(s.live_evaluation.openphish_recall);
+    document.getElementById("s-recall-note").textContent = "OpenPhish feed, " + (s.live_evaluation.openphish_fetched_at || "").slice(0, 10);
+    document.getElementById("s-fpr").textContent = pct(s.live_evaluation.tranco_false_positive_rate, 2);
+    document.getElementById("s-auc").textContent = s.test_metrics.roc_auc.toFixed(3);
+    document.getElementById("s-pr").textContent = pct(s.test_metrics.precision, 0) + " / " + pct(s.test_metrics.recall, 0);
+    document.getElementById("s-thr").textContent = "at threshold " + s.threshold.toFixed(3);
+  } catch (e) { /* tiles keep their placeholders */ }
+}
+
+async function score(url) {
+  const err = document.getElementById("error");
+  err.textContent = "";
+  document.getElementById("go").disabled = true;
+  try {
+    const res = await fetch("/v1/score", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.statusText);
+    document.getElementById("result").style.display = "block";
+    const tier = document.getElementById("tier");
+    tier.textContent = d.risk_tier;
+    tier.className = "badge " + d.risk_tier;
+    const bar = document.getElementById("bar");
+    bar.style.width = pct(d.phishing_probability);
+    bar.style.background = color[d.risk_tier];
+    document.getElementById("tick").style.left = pct(d.threshold);
+    document.getElementById("prob").textContent = pct(d.phishing_probability);
+    document.getElementById("verdict").textContent =
+      `${d.registrable_domain}: ${d.flagged ? "flagged as phishing" : "not flagged"} (threshold ${d.threshold.toFixed(3)})`;
+    const list = document.getElementById("reasons");
+    list.replaceChildren(...(d.reasons.length ? d.reasons : ["Nothing unusual compared with legitimate domains"]).map(r => {
+      const li = document.createElement("li");
+      li.textContent = r;
+      return li;
+    }));
+  } catch (e) {
+    err.textContent = "Scoring failed: " + e.message;
+  } finally {
+    document.getElementById("go").disabled = false;
+  }
+}
+
+document.getElementById("score-form").addEventListener("submit", e => {
+  e.preventDefault();
+  score(document.getElementById("url").value.trim());
+});
+document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", () => {
+  document.getElementById("url").value = b.dataset.url;
+  score(b.dataset.url);
+}));
+loadStats();
+</script>
+</body>
+</html>
