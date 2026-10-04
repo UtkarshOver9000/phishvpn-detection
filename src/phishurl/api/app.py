@@ -7,7 +7,7 @@ loaded from ``src/phishurl/artifacts``. Nothing is trained at startup.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -65,7 +65,7 @@ async def score(req: ScoreRequest):
     return ScoreResponse(
         **result.__dict__,
         threshold=scorer.threshold,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
 
 

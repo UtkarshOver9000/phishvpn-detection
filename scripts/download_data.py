@@ -17,7 +17,7 @@ import argparse
 import hashlib
 import urllib.request
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SOURCES = {
@@ -55,7 +55,7 @@ def main() -> None:
     with zipfile.ZipFile(args.data_dir / "phiusiil.zip") as zf:
         zf.extractall(args.data_dir)
     fetch(TRANCO_ID_URL, args.data_dir / "tranco-list-id.txt")
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     (args.data_dir / "openphish-fetched-at.txt").write_text(stamp + "\n")
     print(f"Tranco list id: {(args.data_dir / 'tranco-list-id.txt').read_text().strip()}; OpenPhish fetched {stamp}")
 
